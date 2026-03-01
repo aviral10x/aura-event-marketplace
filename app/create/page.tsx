@@ -3,23 +3,24 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import {
     Sparkles,
     CalendarDays,
     MapPin,
     Type,
     FileText,
-    Loader2,
     ArrowRight,
     Plus,
 } from 'lucide-react'
 import { auth } from '@/lib/firebase'
+import { handleFirebaseError } from '@/lib/error-handler'
+import { ButtonSpinner } from '@/components/ui/loading-spinner'
 
 
 export default function CreateEvent() {
     const router = useRouter()
     const [loading, setLoading] = useState(false)
-    const [error, setError] = useState('')
 
     const [name, setName] = useState('')
     const [description, setDescription] = useState('')
@@ -30,13 +31,20 @@ export default function CreateEvent() {
 
     const handleCreate = async (e: React.FormEvent) => {
         e.preventDefault()
+        
+        // Basic validation
+        if (name.length < 3) {
+            toast.error('Event name must be at least 3 characters')
+            return
+        }
+        
         setLoading(true)
-        setError('')
 
         try {
             const currentUser = auth.currentUser;
             if (!currentUser) {
-                setError('You must be signed in to create an event');
+                toast.error('Please sign in to create an event');
+                router.push('/auth/signin');
                 setLoading(false);
                 return;
             }
@@ -62,15 +70,18 @@ export default function CreateEvent() {
             const result = await res.json()
 
             if (!res.ok) {
-                setError(result.error || 'Failed to create event')
+                toast.error(result.error || 'Failed to create event')
                 setLoading(false)
                 return
             }
 
-            // Redirect to the import page and pre-select this new event
+            // Success!
+            toast.success('Event created! 🎉')
+            
+            // Redirect to the import page
             router.push(`/import?eventId=${result.event.id}`)
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Something went wrong')
+            toast.error(handleFirebaseError(err))
             setLoading(false)
         }
     }
@@ -136,12 +147,6 @@ export default function CreateEvent() {
                     {/* Form Card */}
                     <div className="glass-panel rounded-3xl p-8 md:p-10 relative overflow-hidden">
                         <div className="absolute top-0 left-0 w-40 h-40 bg-blue-500/10 rounded-br-full blur-2xl pointer-events-none" />
-
-                        {error && (
-                            <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm relative z-10">
-                                {error}
-                            </div>
-                        )}
 
                         <form onSubmit={handleCreate} className="space-y-6 relative z-10">
                             {/* Event Name */}
@@ -251,7 +256,7 @@ export default function CreateEvent() {
                             >
                                 {loading ? (
                                     <>
-                                        <Loader2 className="w-5 h-5 animate-spin" />
+                                        <ButtonSpinner />
                                         Creating…
                                     </>
                                 ) : (
