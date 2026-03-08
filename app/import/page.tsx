@@ -23,6 +23,7 @@ import {
 
 type ImportState = 'idle' | 'loading' | 'importing' | 'done' | 'error'
 type ImportTab = 'upload' | 'google' | 'gdrive' | 'dropbox' | 'onedrive' | 'box'
+type AnalysisState = 'idle' | 'analyzing' | 'done' | 'error'
 
 // Platform config for cloud tabs
 const CLOUD_PLATFORMS: { key: ImportTab; label: string; apiPath: string; placeholder: string; help: string; color: string }[] = [
@@ -88,6 +89,8 @@ function ImportPageInner() {
     const [statusMessage, setStatusMessage] = useState('')
     const [progress, setProgress] = useState({ imported: 0, failed: 0, current: 0, total: 0 })
     const [errorMessage, setErrorMessage] = useState('')
+    const [analysisState, setAnalysisState] = useState<AnalysisState>('idle')
+    const [analysisMessage, setAnalysisMessage] = useState('')
     const abortRef = useRef<AbortController | null>(null)
     const [activeTab, setActiveTab] = useState<ImportTab>('upload')
 
@@ -136,6 +139,30 @@ function ImportPageInner() {
         fetchEvents()
     }, [searchParams])
 
+    const runAiAnalysis = useCallback(async (eventId: string) => {
+        setAnalysisState('analyzing')
+        setAnalysisMessage('Running AI image analysis…')
+
+        try {
+            const response = await fetch('/api/analyze-uploads', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ eventId }),
+            })
+
+            const result = await response.json()
+            if (!response.ok || result.error) {
+                throw new Error(result.error || `Analysis failed: HTTP ${response.status}`)
+            }
+
+            setAnalysisState('done')
+            setAnalysisMessage(result.message || `Analyzed ${result.analyzed ?? 0} uploads`)
+        } catch (err: unknown) {
+            setAnalysisState('error')
+            setAnalysisMessage(err instanceof Error ? err.message : 'AI analysis failed')
+        }
+    }, [])
+
     // ── Cloud Platform Import ─────────────────────────────────────────────
     const handleCloudImport = useCallback(async () => {
         if (!albumUrl || !selectedEventId) return
@@ -147,6 +174,8 @@ function ImportPageInner() {
         setStatusMessage(`Connecting to ${platform.label}…`)
         setProgress({ imported: 0, failed: 0, current: 0, total: 0 })
         setErrorMessage('')
+        setAnalysisState('idle')
+        setAnalysisMessage('')
 
         const controller = new AbortController()
         abortRef.current = controller
@@ -174,6 +203,8 @@ function ImportPageInner() {
             const reader = response.body.getReader()
             const decoder = new TextDecoder()
             let buffer = ''
+            let isTerminalState = false
+            let importedCount = 0
 
             while (true) {
                 const { done, value } = await reader.read()
@@ -201,6 +232,7 @@ function ImportPageInner() {
                                 total: data.total ?? 0,
                             })
                         } else if (data.type === 'complete') {
+                            importedCount = data.imported ?? 0
                             setProgress({
                                 imported: data.imported ?? 0,
                                 failed: data.failed ?? 0,
@@ -208,9 +240,11 @@ function ImportPageInner() {
                                 total: data.total ?? 0,
                             })
                             setState('done')
+                            isTerminalState = true
                         } else if (data.type === 'error') {
                             setErrorMessage(data.message || 'Something went wrong')
                             setState('error')
+                            isTerminalState = true
                         }
                     } catch {
                         // skip invalid JSON chunks
@@ -218,8 +252,12 @@ function ImportPageInner() {
                 }
             }
 
-            if (state !== 'done' && state !== 'error') {
+            if (!isTerminalState) {
                 setState('done')
+            }
+
+            if (importedCount > 0) {
+                await runAiAnalysis(selectedEventId)
             }
         } catch (err: unknown) {
             if ((err as Error).name === 'AbortError') {
@@ -230,7 +268,7 @@ function ImportPageInner() {
                 setState('error')
             }
         }
-    }, [albumUrl, selectedEventId, state, activeTab])
+    }, [albumUrl, selectedEventId, state, activeTab, runAiAnalysis])
 
     // ── Direct File Upload ────────────────────────────────────────────────
     const handleFileUpload = useCallback(async () => {
@@ -240,6 +278,8 @@ function ImportPageInner() {
         setStatusMessage('Uploading files…')
         setProgress({ imported: 0, failed: 0, current: 0, total: selectedFiles.length })
         setErrorMessage('')
+        setAnalysisState('idle')
+        setAnalysisMessage('')
 
         try {
             const formData = new FormData()
@@ -267,11 +307,15 @@ function ImportPageInner() {
             })
             setState('done')
             setSelectedFiles([])
+
+            if ((result.imported ?? 0) > 0) {
+                await runAiAnalysis(selectedEventId)
+            }
         } catch (err: unknown) {
             setErrorMessage(err instanceof Error ? err.message : 'Upload failed')
             setState('error')
         }
-    }, [selectedFiles, selectedEventId])
+    }, [selectedFiles, selectedEventId, runAiAnalysis])
 
     // ── Drag & Drop handlers ──────────────────────────────────────────────
     const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -401,6 +445,27 @@ function ImportPageInner() {
                                         </p>
                                     )}
                                 </div>
+
+                                {analysisState !== 'idle' && (
+                                    <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-gray-300 flex items-center justify-center gap-2">
+                                        {analysisState === 'analyzing' ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 animate-spin text-purple-300" />
+                                                <span>{analysisMessage}</span>
+                                            </>
+                                        ) : analysisState === 'done' ? (
+                                            <>
+                                                <CheckCircle2 className="w-4 h-4 text-green-400" />
+                                                <span>{analysisMessage}</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <XCircle className="w-4 h-4 text-red-400" />
+                                                <span>{analysisMessage}</span>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
 
                                 {/* Platform Switcher */}
                                 <div className="space-y-2">
@@ -660,6 +725,8 @@ function ImportPageInner() {
                                             setAlbumUrl('')
                                             setSelectedFiles([])
                                             setProgress({ imported: 0, failed: 0, current: 0, total: 0 })
+                                            setAnalysisState('idle')
+                                            setAnalysisMessage('')
                                         }}
                                         className="flex-1 py-3 border border-white/10 rounded-xl font-semibold text-gray-300 hover:text-white hover:border-white/30 transition"
                                     >
@@ -686,6 +753,8 @@ function ImportPageInner() {
                                     onClick={() => {
                                         setState('idle')
                                         setErrorMessage('')
+                                        setAnalysisState('idle')
+                                        setAnalysisMessage('')
                                     }}
                                     className="w-full py-3 bg-gradient-to-r from-purple-500 to-blue-500 rounded-xl font-semibold hover:from-purple-600 hover:to-blue-600 transition"
                                 >
