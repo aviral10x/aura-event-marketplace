@@ -27,6 +27,7 @@ Stores instances of created events.
   - `start_date` (string/ISO 8601, nullable)
   - `end_date` (string/ISO 8601, nullable)
   - `is_public` (boolean): Controls visibility in the master `/events` feed.
+  - `invited_emails` (array of strings, optional): Lowercase email addresses of users invited to a private event. Only relevant when `is_public` is `false`.
   - `created_by` (string): The UID of the user who created it.
   - `created_at` (string/ISO 8601): Timestamp of creation.
 

@@ -27,6 +27,10 @@ export const eventSchema = z.object({
   
   is_public: z.boolean()
     .default(true),
+  
+  invited_emails: z.array(
+    z.string().email('Invalid email address').transform(e => e.toLowerCase())
+  ).optional().default([]),
 });
 
 export type EventFormData = z.infer<typeof eventSchema>;

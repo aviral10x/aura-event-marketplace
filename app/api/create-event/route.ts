@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
         async () => {
             try {
                 const body = await request.json()
-                const { name, description, location, startDate, endDate, isPublic } = body
+                const { name, description, location, startDate, endDate, isPublic, invitedEmails } = body
 
                 if (!name) {
                     return Response.json(
@@ -87,6 +87,11 @@ export async function POST(request: NextRequest) {
                     )
                 }
 
+                // Normalize invited emails to lowercase, dedup
+                const normalizedEmails: string[] = Array.isArray(invitedEmails)
+                    ? [...new Set(invitedEmails.map((e: string) => e.trim().toLowerCase()).filter((e: string) => e.length > 0))]
+                    : []
+
                 const newEvent = {
                     id: adminDb.collection('events').doc().id,
                     code,
@@ -96,6 +101,7 @@ export async function POST(request: NextRequest) {
                     start_date: startDate || null,
                     end_date: endDate || null,
                     is_public: isPublic ?? true,
+                    invited_emails: (isPublic ?? true) ? [] : normalizedEmails,
                     created_by: uid,
                     created_at: new Date().toISOString(),
                     // Additional metadata

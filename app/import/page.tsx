@@ -17,10 +17,56 @@ import {
     ChevronDown,
     Upload,
     X,
+    Cloud,
+    HardDrive,
 } from 'lucide-react'
 
 type ImportState = 'idle' | 'loading' | 'importing' | 'done' | 'error'
-type ImportTab = 'google' | 'upload'
+type ImportTab = 'upload' | 'google' | 'gdrive' | 'dropbox' | 'onedrive' | 'box'
+
+// Platform config for cloud tabs
+const CLOUD_PLATFORMS: { key: ImportTab; label: string; apiPath: string; placeholder: string; help: string; color: string }[] = [
+    {
+        key: 'google',
+        label: 'Google Photos',
+        apiPath: '/api/import-google-photos',
+        placeholder: 'https://photos.app.goo.gl/... or https://photos.google.com/share/...',
+        help: 'Open the album → Share → Copy link',
+        color: 'from-red-500/20 to-yellow-500/20',
+    },
+    {
+        key: 'gdrive',
+        label: 'Google Drive',
+        apiPath: '/api/import-gdrive',
+        placeholder: 'https://drive.google.com/drive/folders/...',
+        help: 'Right-click folder → Share → Copy link (set to "Anyone with the link")',
+        color: 'from-blue-500/20 to-green-500/20',
+    },
+    {
+        key: 'dropbox',
+        label: 'Dropbox',
+        apiPath: '/api/import-dropbox',
+        placeholder: 'https://www.dropbox.com/sh/... or https://www.dropbox.com/scl/...',
+        help: 'Right-click folder → Share → Create link → Copy link',
+        color: 'from-blue-500/20 to-blue-400/20',
+    },
+    {
+        key: 'onedrive',
+        label: 'OneDrive',
+        apiPath: '/api/import-onedrive',
+        placeholder: 'https://1drv.ms/... or https://onedrive.live.com/...',
+        help: 'Right-click folder → Share → Copy link (set to "Anyone with the link")',
+        color: 'from-sky-500/20 to-blue-600/20',
+    },
+    {
+        key: 'box',
+        label: 'Box',
+        apiPath: '/api/import-box',
+        placeholder: 'https://app.box.com/s/...',
+        help: 'Click Share → Get shared link → Copy link (set to "People with the link")',
+        color: 'from-blue-600/20 to-indigo-500/20',
+    },
+]
 
 type ProgressLine = {
     type: 'status' | 'progress' | 'complete' | 'error'
@@ -90,12 +136,15 @@ function ImportPageInner() {
         fetchEvents()
     }, [searchParams])
 
-    // ── Google Photos Import ──────────────────────────────────────────────
-    const handleGoogleImport = useCallback(async () => {
+    // ── Cloud Platform Import ─────────────────────────────────────────────
+    const handleCloudImport = useCallback(async () => {
         if (!albumUrl || !selectedEventId) return
 
+        const platform = CLOUD_PLATFORMS.find(p => p.key === activeTab)
+        if (!platform) return
+
         setState('loading')
-        setStatusMessage('Connecting to Google Photos…')
+        setStatusMessage(`Connecting to ${platform.label}…`)
         setProgress({ imported: 0, failed: 0, current: 0, total: 0 })
         setErrorMessage('')
 
@@ -103,10 +152,15 @@ function ImportPageInner() {
         abortRef.current = controller
 
         try {
-            const response = await fetch('/api/import-google-photos', {
+            // Google Photos uses 'albumUrl', others use 'url'
+            const bodyPayload = activeTab === 'google'
+                ? { albumUrl, eventId: selectedEventId }
+                : { url: albumUrl, eventId: selectedEventId }
+
+            const response = await fetch(platform.apiPath, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ albumUrl, eventId: selectedEventId }),
+                body: JSON.stringify(bodyPayload),
                 signal: controller.signal,
             })
 
@@ -176,7 +230,7 @@ function ImportPageInner() {
                 setState('error')
             }
         }
-    }, [albumUrl, selectedEventId, state])
+    }, [albumUrl, selectedEventId, state, activeTab])
 
     // ── Direct File Upload ────────────────────────────────────────────────
     const handleFileUpload = useCallback(async () => {
@@ -303,7 +357,7 @@ function ImportPageInner() {
                             </span>
                         </h1>
                         <p className="text-lg text-gray-400 max-w-xl mx-auto">
-                            Upload files directly or import from a Google Photos shared album.
+                            Upload files or import from your cloud storage.
                         </p>
                     </div>
 
@@ -348,28 +402,36 @@ function ImportPageInner() {
                                     )}
                                 </div>
 
-                                {/* Tab Switcher */}
-                                <div className="flex bg-white/5 rounded-xl p-1 border border-white/10">
-                                    <button
-                                        onClick={() => setActiveTab('upload')}
-                                        className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg text-sm font-semibold transition-all ${activeTab === 'upload'
-                                                ? 'bg-gradient-to-r from-purple-500/20 to-blue-500/20 text-white border border-purple-500/30 shadow-lg shadow-purple-500/10'
-                                                : 'text-gray-400 hover:text-gray-200'
-                                            }`}
-                                    >
-                                        <Upload className="w-4 h-4" />
-                                        Upload Files
-                                    </button>
-                                    <button
-                                        onClick={() => setActiveTab('google')}
-                                        className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg text-sm font-semibold transition-all ${activeTab === 'google'
-                                                ? 'bg-gradient-to-r from-purple-500/20 to-blue-500/20 text-white border border-purple-500/30 shadow-lg shadow-purple-500/10'
-                                                : 'text-gray-400 hover:text-gray-200'
-                                            }`}
-                                    >
-                                        <Link2 className="w-4 h-4" />
-                                        Google Photos
-                                    </button>
+                                {/* Platform Switcher */}
+                                <div className="space-y-2">
+                                    <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                        Import Source
+                                    </label>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        <button
+                                            onClick={() => setActiveTab('upload')}
+                                            className={`flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl text-xs font-semibold transition-all ${activeTab === 'upload'
+                                                    ? 'bg-gradient-to-br from-purple-500/20 to-blue-500/20 text-white border border-purple-500/30 shadow-lg shadow-purple-500/10'
+                                                    : 'bg-white/5 text-gray-400 hover:text-gray-200 border border-white/5 hover:border-white/10'
+                                                }`}
+                                        >
+                                            <Upload className="w-5 h-5" />
+                                            Upload
+                                        </button>
+                                        {CLOUD_PLATFORMS.map(p => (
+                                            <button
+                                                key={p.key}
+                                                onClick={() => setActiveTab(p.key)}
+                                                className={`flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl text-xs font-semibold transition-all ${activeTab === p.key
+                                                        ? `bg-gradient-to-br ${p.color} text-white border border-purple-500/30 shadow-lg shadow-purple-500/10`
+                                                        : 'bg-white/5 text-gray-400 hover:text-gray-200 border border-white/5 hover:border-white/10'
+                                                    }`}
+                                            >
+                                                <Cloud className="w-5 h-5" />
+                                                {p.label}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
 
                                 {/* ── Upload Files Tab ─────────────── */}
@@ -459,46 +521,49 @@ function ImportPageInner() {
                                     </div>
                                 )}
 
-                                {/* ── Google Photos Tab ─────────────── */}
-                                {activeTab === 'google' && (
-                                    <div className="space-y-4">
-                                        <div>
-                                            <label className="block text-sm font-medium mb-2 text-gray-300">
-                                                <Link2 className="w-4 h-4 inline mr-1.5 -mt-0.5" />
-                                                Shareable Album Link
-                                            </label>
-                                            <input
-                                                type="url"
-                                                value={albumUrl}
-                                                onChange={e => setAlbumUrl(e.target.value)}
-                                                placeholder="https://photos.app.goo.gl/... or https://photos.google.com/share/..."
-                                                className="w-full px-5 py-4 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-purple-500/60 focus:ring-1 focus:ring-purple-500/20 transition text-white placeholder:text-gray-600 text-base"
-                                                disabled={state === 'loading'}
-                                            />
-                                            <p className="text-xs text-gray-500 mt-1.5">
-                                                In Google Photos, open the album → click <strong className="text-gray-400">Share</strong> → <strong className="text-gray-400">Copy link</strong>
-                                            </p>
-                                        </div>
+                                {/* ── Cloud Platform Tabs ────────── */}
+                                {CLOUD_PLATFORMS.some(p => p.key === activeTab) && (() => {
+                                    const platform = CLOUD_PLATFORMS.find(p => p.key === activeTab)!
+                                    return (
+                                        <div className="space-y-4">
+                                            <div>
+                                                <label className="block text-sm font-medium mb-2 text-gray-300">
+                                                    <Link2 className="w-4 h-4 inline mr-1.5 -mt-0.5" />
+                                                    {platform.label} Shared Link
+                                                </label>
+                                                <input
+                                                    type="url"
+                                                    value={albumUrl}
+                                                    onChange={e => setAlbumUrl(e.target.value)}
+                                                    placeholder={platform.placeholder}
+                                                    className="w-full px-5 py-4 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-purple-500/60 focus:ring-1 focus:ring-purple-500/20 transition text-white placeholder:text-gray-600 text-base"
+                                                    disabled={state === 'loading'}
+                                                />
+                                                <p className="text-xs text-gray-500 mt-1.5">
+                                                    {platform.help}
+                                                </p>
+                                            </div>
 
-                                        <button
-                                            onClick={handleGoogleImport}
-                                            disabled={!albumUrl || !selectedEventId || state === 'loading'}
-                                            className="w-full py-4 bg-gradient-to-r from-purple-500 to-blue-500 rounded-xl font-bold text-lg hover:from-purple-600 hover:to-blue-600 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-[0_0_30px_rgba(168,85,247,0.2)] hover:shadow-[0_0_40px_rgba(168,85,247,0.4)] hover:-translate-y-0.5 flex items-center justify-center gap-3"
-                                        >
-                                            {state === 'loading' ? (
-                                                <>
-                                                    <Loader2 className="w-5 h-5 animate-spin" />
-                                                    Connecting…
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <ImagePlus className="w-5 h-5" />
-                                                    Import from Google Photos
-                                                </>
-                                            )}
-                                        </button>
-                                    </div>
-                                )}
+                                            <button
+                                                onClick={handleCloudImport}
+                                                disabled={!albumUrl || !selectedEventId || state === 'loading'}
+                                                className="w-full py-4 bg-gradient-to-r from-purple-500 to-blue-500 rounded-xl font-bold text-lg hover:from-purple-600 hover:to-blue-600 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-[0_0_30px_rgba(168,85,247,0.2)] hover:shadow-[0_0_40px_rgba(168,85,247,0.4)] hover:-translate-y-0.5 flex items-center justify-center gap-3"
+                                            >
+                                                {state === 'loading' ? (
+                                                    <>
+                                                        <Loader2 className="w-5 h-5 animate-spin" />
+                                                        Connecting…
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <ImagePlus className="w-5 h-5" />
+                                                        Import from {platform.label}
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
+                                    )
+                                })()}
                             </div>
                         )}
 
@@ -545,7 +610,7 @@ function ImportPageInner() {
                                     </>
                                 )}
 
-                                {activeTab === 'google' && (
+                                {activeTab !== 'upload' && (
                                     <button
                                         onClick={() => abortRef.current?.abort()}
                                         className="w-full py-3 border border-white/10 rounded-xl text-sm text-gray-400 hover:text-white hover:border-white/30 transition"

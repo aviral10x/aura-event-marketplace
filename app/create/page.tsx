@@ -12,6 +12,10 @@ import {
     FileText,
     ArrowRight,
     Plus,
+    Lock,
+    Globe,
+    Mail,
+    X,
 } from 'lucide-react'
 import { auth } from '@/lib/firebase'
 import { handleFirebaseError } from '@/lib/error-handler'
@@ -28,6 +32,41 @@ export default function CreateEvent() {
     const [startDate, setStartDate] = useState('')
     const [endDate, setEndDate] = useState('')
     const [isPublic, setIsPublic] = useState(true)
+    const [invitedEmails, setInvitedEmails] = useState<string[]>([])
+    const [emailInput, setEmailInput] = useState('')
+    const [emailError, setEmailError] = useState('')
+
+    const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+
+    const addEmail = (raw: string) => {
+        const email = raw.trim().toLowerCase()
+        if (!email) return
+        if (!isValidEmail(email)) {
+            setEmailError('Invalid email address')
+            return
+        }
+        if (invitedEmails.includes(email)) {
+            setEmailError('Email already added')
+            return
+        }
+        setInvitedEmails(prev => [...prev, email])
+        setEmailInput('')
+        setEmailError('')
+    }
+
+    const removeEmail = (email: string) => {
+        setInvitedEmails(prev => prev.filter(e => e !== email))
+    }
+
+    const handleEmailKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter' || e.key === ',') {
+            e.preventDefault()
+            addEmail(emailInput)
+        }
+        if (e.key === 'Backspace' && !emailInput && invitedEmails.length > 0) {
+            removeEmail(invitedEmails[invitedEmails.length - 1])
+        }
+    }
 
     const handleCreate = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -64,6 +103,7 @@ export default function CreateEvent() {
                     startDate: startDate || null,
                     endDate: endDate || null,
                     isPublic,
+                    invitedEmails: isPublic ? [] : invitedEmails,
                 }),
             })
 
@@ -229,23 +269,90 @@ export default function CreateEvent() {
                             </div>
 
                             {/* Visibility Toggle */}
-                            <div className="flex items-center justify-between p-4 bg-white/[0.03] rounded-xl border border-white/5">
-                                <div>
-                                    <p className="text-sm font-medium text-white">Public Event</p>
-                                    <p className="text-xs text-gray-500 mt-0.5">Anyone can browse and purchase content</p>
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={() => setIsPublic(!isPublic)}
-                                    className={`relative w-12 h-7 rounded-full transition-colors ${isPublic ? 'bg-purple-500' : 'bg-white/10'
-                                        }`}
-                                    disabled={loading}
-                                >
-                                    <div
-                                        className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-transform ${isPublic ? 'translate-x-5' : 'translate-x-0'
+                            <div className="rounded-xl border border-white/5 overflow-hidden">
+                                <div className="flex items-center justify-between p-4 bg-white/[0.03]">
+                                    <div className="flex items-center gap-3">
+                                        {isPublic ? (
+                                            <Globe className="w-5 h-5 text-green-400" />
+                                        ) : (
+                                            <Lock className="w-5 h-5 text-amber-400" />
+                                        )}
+                                        <div>
+                                            <p className="text-sm font-medium text-white">
+                                                {isPublic ? 'Public Event' : 'Private Event'}
+                                            </p>
+                                            <p className="text-xs text-gray-500 mt-0.5">
+                                                {isPublic
+                                                    ? 'Anyone can browse and view this event'
+                                                    : 'Only invited people can access this event'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsPublic(!isPublic)}
+                                        className={`relative w-12 h-7 rounded-full transition-colors ${isPublic ? 'bg-purple-500' : 'bg-amber-500'
                                             }`}
-                                    />
-                                </button>
+                                        disabled={loading}
+                                    >
+                                        <div
+                                            className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-transform ${isPublic ? 'translate-x-5' : 'translate-x-0'
+                                                }`}
+                                        />
+                                    </button>
+                                </div>
+
+                                {/* Invite Emails Section — only shown when private */}
+                                {!isPublic && (
+                                    <div className="p-4 border-t border-white/5 bg-amber-500/[0.03]">
+                                        <label className="block text-sm font-medium mb-3 text-gray-300">
+                                            <Mail className="w-4 h-4 inline mr-1.5 -mt-0.5" />
+                                            Invite People
+                                        </label>
+
+                                        {/* Email Chips */}
+                                        {invitedEmails.length > 0 && (
+                                            <div className="flex flex-wrap gap-2 mb-3">
+                                                {invitedEmails.map(email => (
+                                                    <span
+                                                        key={email}
+                                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-500/15 border border-purple-500/25 rounded-full text-xs text-purple-300 group"
+                                                    >
+                                                        {email}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => removeEmail(email)}
+                                                            className="text-purple-400/60 hover:text-red-400 transition-colors"
+                                                        >
+                                                            <X className="w-3 h-3" />
+                                                        </button>
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {/* Email Input */}
+                                        <input
+                                            type="email"
+                                            value={emailInput}
+                                            onChange={e => {
+                                                setEmailInput(e.target.value)
+                                                setEmailError('')
+                                            }}
+                                            onKeyDown={handleEmailKeyDown}
+                                            onBlur={() => { if (emailInput) addEmail(emailInput) }}
+                                            placeholder="Type an email and press Enter…"
+                                            className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-amber-500/40 focus:ring-1 focus:ring-amber-500/20 transition text-white placeholder:text-gray-600 text-sm"
+                                            disabled={loading}
+                                        />
+                                        {emailError && (
+                                            <p className="text-xs text-red-400 mt-1.5">{emailError}</p>
+                                        )}
+                                        <p className="text-[11px] text-gray-600 mt-2">
+                                            Invitees will need to sign in with one of these emails to access the event.
+                                        </p>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Submit */}
@@ -272,3 +379,4 @@ export default function CreateEvent() {
         </div>
     )
 }
+
